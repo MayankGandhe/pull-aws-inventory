@@ -15,30 +15,57 @@ Lambda, its IAM role, and the bucket.
 
 - `src/handler.py` — Lambda function code (Python 3.12).
 - `template.yaml` — CloudFormation: Lambda + IAM role + S3 bucket.
+- `deploy.sh` — one-step deploy script (stack + handler code). See [Deploy](#deploy).
 - `README.md` — this file.
 
 ## Deploy
 
-The template ships with placeholder inline code so the stack is valid on its
-own. Deploy the stack, then push the real code from `src/`.
+Use `deploy.sh`. It does the full deploy in one step: creates/updates the
+CloudFormation stack (Lambda + IAM role + S3 bucket), then packages
+`src/handler.py` and pushes it to the function, replacing the placeholder code.
 
-1. Create the stack (bucket name auto-generated if left blank):
+Make sure your shell has valid AWS credentials first (`aws sts
+get-caller-identity` should succeed), then run:
 
-   ```sh
-   aws cloudformation deploy \
-     --template-file template.yaml \
-     --stack-name inventory-export-lambda \
-     --capabilities CAPABILITY_IAM
-   ```
+```sh
+./deploy.sh --bucket your-unique-bucket-name
+```
 
-2. Package and upload the real handler code:
+Bucket names are globally unique and lowercase. Omit `--bucket` to let
+CloudFormation generate a name automatically.
 
-   ```sh
-   cd src && zip ../function.zip handler.py && cd ..
-   aws lambda update-function-code \
-     --function-name inventory-export-lambda \
-     --zip-file fileb://function.zip
-   ```
+### Options
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `-b, --bucket NAME` | S3 bucket name for inventory CSVs. Omit for an auto-generated name. | (auto-generated) |
+| `-s, --stack-name NAME` | CloudFormation stack name. | `inventory-export-lambda` |
+| `-f, --function-name NAME` | Lambda function name. | `inventory-export-lambda` |
+| `-q, --query STRING` | Resource Explorer query string. | `*` |
+| `-r, --region REGION` | AWS region. | current CLI/env region |
+| `-p, --profile NAME` | AWS CLI profile to use. | default credential chain |
+| `--skip-code` | Deploy the stack only; keep the placeholder code. | off |
+| `-h, --help` | Show usage and exit. | |
+
+Credentials: with no `--profile`, the script uses the default AWS credential
+chain (environment variables, then the `default` profile). Pass `--profile` to
+use a named profile instead.
+
+### Examples
+
+```sh
+# Simplest deploy, default credential chain
+./deploy.sh --bucket valere-aws-account-inventory
+
+# Pin a region and use a named profile
+./deploy.sh -b my-inventory-bucket -r us-east-1 -p my-profile
+
+# Deploy the stack only, without pushing handler code
+./deploy.sh --bucket my-inventory-bucket --skip-code
+```
+
+On success the script prints the stack outputs (function name, bucket, role
+ARN) as a table.
 
 ## Invoke
 
