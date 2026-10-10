@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Inventory export Lambda. Pulls account inventory via Resource Explorer v2,
+  writes a CSV, and uploads it to an S3 bucket. Includes the IAM role and bucket.
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: inventory-export-lambda
+    Description: Name of the Lambda function.
+  BucketName:
+    Type: String
+    Default: ""
+    Description: >
+      Optional explicit S3 bucket name. Leave blank to let CloudFormation
+      generate a unique name.
+  ResourceQuery:
+    Type: String
+    Default: "*"
+    Description: Resource Explorer search query string. "*" matches all resources.
+
+Conditions:
+  HasBucketName: !Not [!Equals [!Ref BucketName, ""]]
+
+Resources:
+  InventoryBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [HasBucketName, !Ref BucketName, !Ref "AWS::NoValue"]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+
+  InventoryFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ResourceExplorerRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Resource Explorer search is account-scoped; resource "*" required.
+              - Effect: Allow
+                Action:
+                  - resource-explorer-2:Search
+                  - resource-explorer-2:GetDefaultView
+                  - resource-explorer-2:ListViews
+                Resource: "*"
+              # Region discovery for the per-region search loop. DescribeRegions
+              # does not support resource-level permissions, so "*" is required.
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeRegions
+                Resource: "*"
+        - PolicyName: InventoryBucketWrite
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "${InventoryBucket.Arn}/*"
+
+  InventoryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt InventoryFunctionRole.Arn
+      Timeout: 900
+      MemorySize: 1024
+      Environment:
+        Variables:
+          TARGET_BUCKET: !Ref InventoryBucket
+          RESOURCE_QUERY: !Ref ResourceQuery
+      Code:
+        ZipFile: |
+          # Placeholder. Deploy the real code from src/handler.py via your
+          # packaging pipeline (e.g. `aws lambda update-function-code`) or
+          # replace this inline block. See README for packaging steps.
+          def lambda_handler(event, context):
+              raise RuntimeError("Deploy src/handler.py; placeholder code is in use.")
+
+Outputs:
+  FunctionName:
+    Description: Name of the deployed Lambda function.
+    Value: !Ref InventoryFunction
+  BucketName:
+    Description: S3 bucket where inventory CSVs are uploaded.
+    Value: !Ref InventoryBucket
+  RoleArn:
+    Description: Execution role ARN for the Lambda function.
+    Value: !GetAtt InventoryFunctionRole.Arn

@@ -1,0 +1,16 @@
+# Kiro workspace config — not for the public repo
+.kiro/
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Deploy / invoke artifacts
+function.zip
+response.json
+
+# OS / editor cruft
+.DS_Store
